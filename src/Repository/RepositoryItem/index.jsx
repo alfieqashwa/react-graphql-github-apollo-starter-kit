@@ -21,12 +21,12 @@ const VIEWER_SUBSCRIPTIONS = {
 const isWatch = viewerSubscription =>
   viewerSubscription === VIEWER_SUBSCRIPTIONS.SUBSCRIBED;
 
-const updateAddStar = (
+const updateWatch = (
   client,
   {
     data: {
-      addStar: {
-        starrable: { id }
+      updateSubscription: {
+        subscribable: { id, viewerSubscription }
       }
     }
   }
@@ -35,21 +35,75 @@ const updateAddStar = (
     id: `Repository:${id}`,
     fragment: REPOSITORY_FRAGMENT
   });
-  // update count of stargazers of repository
-  const totalCount = repository.stargazers.totalCount + 1;
 
-  // write repository back to cache
+  let { totalCount } = repository.watchers;
+  totalCount =
+    viewerSubscription === VIEWER_SUBSCRIPTIONS.SUBSCRIBED
+      ? totalCount + 1
+      : totalCount - 1;
+
   client.writeFragment({
     id: `Repository:${id}`,
     fragment: REPOSITORY_FRAGMENT,
     data: {
       ...repository,
-      stargazers: {
-        ...repository.stargazers,
+      watchers: {
+        ...repository.watchers,
         totalCount
       }
     }
   });
+};
+
+const updateAddStar = (
+  client,
+  {
+    data: {
+      addStar: {
+        starrable: { id, viewerHasStarred }
+      }
+    }
+  }
+) =>
+  client.writeFragment({
+    id: `Repository:${id}`,
+    fragment: REPOSITORY_FRAGMENT,
+    data: getUpdatedStarData(client, id, viewerHasStarred)
+  });
+
+const updateRemoveStar = (
+  client,
+  {
+    data: {
+      removeStar: {
+        starrable: { id, viewerHasStarred }
+      }
+    }
+  }
+) => {
+  client.writeFragment({
+    id: `Repository:${id}`,
+    fragment: REPOSITORY_FRAGMENT,
+    data: getUpdatedStarData(client, id, viewerHasStarred)
+  });
+};
+
+const getUpdatedStarData = (client, id, viewerHasStarred) => {
+  const repository = client.readFragment({
+    id: `Repository:${id}`,
+    fragment: REPOSITORY_FRAGMENT
+  });
+
+  let { totalCount } = repository.stargazers;
+  totalCount = viewerHasStarred ? totalCount + 1 : totalCount - 1;
+
+  return {
+    ...repository,
+    stargazers: {
+      ...repository.stargazers,
+      totalCount
+    }
+  };
 };
 
 const RepositoryItem = ({
@@ -79,6 +133,19 @@ const RepositoryItem = ({
               ? VIEWER_SUBSCRIPTIONS.UNSUBSCRIBED
               : VIEWER_SUBSCRIPTIONS.SUBSCRIBED
           }}
+          optimisticResponse={{
+            updateSubscription: {
+              __typename: 'Mutation',
+              subscribable: {
+                __typename: 'Repository',
+                id,
+                viewerSubscription: isWatch(viewerSubscription)
+                  ? VIEWER_SUBSCRIPTIONS.UNSUBSCRIBED
+                  : VIEWER_SUBSCRIPTIONS.SUBSCRIBED
+              }
+            }
+          }}
+          update={updateWatch}
         >
           {(updateSubscription, { data, loading, error }) => (
             <Button
@@ -96,6 +163,16 @@ const RepositoryItem = ({
           <Mutation
             mutation={STAR_REPOSITORY}
             variables={{ id }}
+            optimisticResponse={{
+              addStar: {
+                __typename: 'Mutation',
+                starrable: {
+                  __typename: 'Repository',
+                  id,
+                  viewerHasStarred: !viewerHasStarred
+                }
+              }
+            }}
             update={updateAddStar}
           >
             {(addStar, { data, loading, error }) => (
@@ -108,7 +185,21 @@ const RepositoryItem = ({
             )}
           </Mutation>
         ) : (
-          <Mutation mutation={UNSTAR_REPOSITORY} variables={{ id }}>
+          <Mutation
+            mutation={UNSTAR_REPOSITORY}
+            variables={{ id }}
+            optimisticResponse={{
+              removeStar: {
+                __typename: 'Mutation',
+                starrable: {
+                  __typename: 'Repository',
+                  id,
+                  viewerHasStarred: !viewerHasStarred
+                }
+              }
+            }}
+            update={updateRemoveStar}
+          >
             {(removeStar, { data, loading, error }) => (
               <Button
                 className="RepositoryItem-title-action"
@@ -119,8 +210,6 @@ const RepositoryItem = ({
             )}
           </Mutation>
         )}
-
-        {/* Here comes your updateSubscription mutation */}
       </div>
     </div>
 
