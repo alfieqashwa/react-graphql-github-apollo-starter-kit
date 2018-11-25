@@ -66,7 +66,7 @@ class Issues extends Component {
           {TRANSITION_LABELS[issueState]}
         </ButtonUnobtrusive>
 
-        {isShow(IssueState) && (
+        {isShow(issueState) && (
           <Query
             query={GET_ISSUES_OF_REPOSITORY}
             variables={{
